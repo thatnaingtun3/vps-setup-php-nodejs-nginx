@@ -1,24 +1,27 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status
 set -e
 
-# Update the package manager
-echo "Updating package list..."
+# ── Colors ────────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+log()     { echo -e "${GREEN}[INFO]${NC}  $1"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC}  $1"; }
+error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+section() { echo -e "\n${BLUE}──── $1 ────${NC}"; }
+
+section "Nginx Installation"
+
+log "Updating package list..."
 sudo apt-get update -y
 
-# Install Nginx
-echo "Installing Nginx..."
+log "Installing Nginx..."
 sudo apt-get install -y nginx
 
-# Start and enable Nginx
-echo "Starting and enabling Nginx service..."
+log "Enabling and starting Nginx..."
 sudo systemctl enable nginx
 sudo systemctl start nginx
 
-# Display installed Nginx version
-echo "Verifying Nginx installation..."
+section "Verification"
 nginx -v
-
-# Success message
-echo "Nginx is installed and running."
+sudo systemctl status nginx --no-pager | grep -E "Active|running" || true
+echo -e "\n${GREEN}Nginx installed and running.${NC}"

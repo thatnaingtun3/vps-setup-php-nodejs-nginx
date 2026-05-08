@@ -1,41 +1,56 @@
-
 #!/bin/bash
-# To add Composer installation to your install_composer.sh script, you typically want to:
 
-# 1. Download the Composer installer.
-# 2. Verify the installer (optional but recommended).
-# 3. Run the installer.
-# 4. Move composer.phar to a directory in your PATH (e.g., /usr/local/bin).
+set -e
 
-# Here's a minimal snippet you can add to your install_composer.sh:
+# ── Colors ────────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+log()     { echo -e "${GREEN}[INFO]${NC}  $1"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC}  $1"; }
+error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+section() { echo -e "\n${BLUE}──── $1 ────${NC}"; }
 
-```sh
-#!/bin/sh
+section "Composer Installation"
 
-EXPECTED_SIGNATURE="$(wget -q -O - https://composer.github.io/installer.sig)"
-php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-ACTUAL_SIGNATURE="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
+# ── PHP check ─────────────────────────────────────────────────────────────────
+command -v php &>/dev/null || error "PHP not found. Run install_php.sh first."
 
-if [ "$EXPECTED_SIGNATURE" != "$ACTUAL_SIGNATURE" ]
-then
-    >&2 echo 'ERROR: Invalid installer signature'
-    rm composer-setup.php
-    exit 1
+# ── Already installed? ────────────────────────────────────────────────────────
+if command -v composer &>/dev/null; then
+    CURRENT=$(composer --version 2>&1 | head -1)
+    warn "Composer already installed: $CURRENT"
+    read -rp "Reinstall / update to latest? [y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        log "Skipping Composer installation."
+        exit 0
+    fi
 fi
 
-php composer-setup.php --quiet
-RESULT=$?
-rm composer-setup.php
+# ── Download installer ────────────────────────────────────────────────────────
+log "Downloading Composer installer..."
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
 
-if [ $RESULT -eq 0 ]; then
-    mv composer.phar /usr/local/bin/composer
-    chmod +x /usr/local/bin/composer
-    echo "Composer installed successfully."
-else
-    echo "Composer installation failed."
+php -r "copy('https://getcomposer.org/installer', '$TMPDIR/composer-setup.php');"
+
+# ── Verify signature ──────────────────────────────────────────────────────────
+log "Verifying installer signature..."
+EXPECTED_SIG="$(curl -fsSL https://composer.github.io/installer.sig)"
+ACTUAL_SIG="$(php -r "echo hash_file('sha384', '$TMPDIR/composer-setup.php');")"
+
+if [ "$EXPECTED_SIG" != "$ACTUAL_SIG" ]; then
+    error "Signature mismatch — installer may be tampered. Aborting."
 fi
-```
+log "Signature verified."
 
-Let me know if you want this added to a specific place in your existing install_composer.sh or if you need further customization.
+# ── Run installer ─────────────────────────────────────────────────────────────
+log "Running Composer installer..."
+php "$TMPDIR/composer-setup.php" --quiet --install-dir="$TMPDIR" --filename=composer
 
+# ── Install globally ──────────────────────────────────────────────────────────
+sudo mv "$TMPDIR/composer" /usr/local/bin/composer
+sudo chmod +x /usr/local/bin/composer
 
+# ── Verify ────────────────────────────────────────────────────────────────────
+section "Verification"
+composer --version
+echo -e "\n${GREEN}Composer installed successfully.${NC}"
