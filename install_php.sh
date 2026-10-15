@@ -2,85 +2,123 @@
 
 set -e
 
-# ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 log()     { echo -e "${GREEN}[INFO]${NC}  $1"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 section() { echo -e "\n${BLUE}──── $1 ────${NC}"; }
 
-# ── Prerequisites ─────────────────────────────────────────────────────────────
-section "Updating packages & installing prerequisites"
-sudo apt-get update -y
-sudo apt-get install -y software-properties-common curl gnupg2 lsb-release ca-certificates
+# Repository setup
+section "Configuring the Sury PHP repository"
 
-# ── PHP PPA ───────────────────────────────────────────────────────────────────
-section "Adding ondrej/php PPA"
-sudo add-apt-repository ppa:ondrej/php -y
-sudo apt-get update -y
-
-# ── Version selection ─────────────────────────────────────────────────────────
-echo -e "\n${BLUE}Available PHP versions:${NC} 8.0  8.1  8.2  8.3  8.4  8.5"
-read -rp "Enter the PHP version to install (e.g., 8.4): " php_version
-
-[[ "$php_version" =~ ^8\.[0-5]$ ]] || error "Invalid version '$php_version'. Choose from 8.0–8.5."
-
-# ── Core extensions (required) ────────────────────────────────────────────────
-section "Installing PHP $php_version — core packages"
-sudo apt-get install -y \
-    php${php_version} \
-    php${php_version}-cli \
-    php${php_version}-common \
-    php${php_version}-fpm \
-    php${php_version}-curl \
-    php${php_version}-gd \
-    php${php_version}-intl \
-    php${php_version}-mbstring \
-    php${php_version}-mysql \
-    php${php_version}-opcache \
-    php${php_version}-readline \
-    php${php_version}-xml \
-    php${php_version}-xsl \
-    php${php_version}-zip \
-    php${php_version}-bz2 \
-    php${php_version}-sqlite3 \
-    php${php_version}-bcmath \
-    php${php_version}-soap \
-    php${php_version}-pgsql \
-    php${php_version}-ldap
-
-# ── Optional extensions (best-effort) ────────────────────────────────────────
-# Some extensions may not yet be published for the latest PHP version.
-section "Installing PHP $php_version — optional extensions"
-OPTIONAL_EXTS=(
-    "php${php_version}-imagick"
-    "php${php_version}-igbinary"
-    "php${php_version}-redis"
-    "php${php_version}-apcu"
-    "php${php_version}-mongodb"
-    "php${php_version}-memcached"
-    "php${php_version}-swoole"
+# Launchpad's ondrej/php PPA does not publish Ubuntu Resolute packages. Remove
+# files created by add-apt-repository before apt-get update, because that stale
+# source makes every update fail with a 404.
+shopt -s nullglob
+old_ppa_files=(
+    /etc/apt/sources.list.d/ondrej-ubuntu-php-*.list
+    /etc/apt/sources.list.d/ondrej-ubuntu-php-*.sources
 )
+shopt -u nullglob
+if ((${#old_ppa_files[@]})); then
+    warn "Removing unsupported ondrej/php Launchpad PPA"
+    sudo rm -f -- "${old_ppa_files[@]}"
+fi
 
-for ext in "${OPTIONAL_EXTS[@]}"; do
-    if apt-cache show "$ext" &>/dev/null 2>&1; then
-        sudo apt-get install -y "$ext" \
-            && log "Installed: $ext" \
-            || warn "Install failed (skipping): $ext"
-    else
-        warn "Not available in repository (skipping): $ext"
+sudo apt-get update -y
+sudo apt-get install -y ca-certificates curl lsb-release
+
+repo_codename="$(lsb_release -sc)"
+if ! curl -fsS "https://packages.sury.org/php/dists/${repo_codename}/Release" >/dev/null; then
+    error "The Sury PHP repository does not support '${repo_codename}'."
+fi
+
+keyring_deb="$(mktemp --suffix=.deb)"
+trap 'rm -f "$keyring_deb"' EXIT
+curl -fsSLo "$keyring_deb" https://packages.sury.org/debsuryorg-archive-keyring.deb
+sudo dpkg -i "$keyring_deb"
+echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${repo_codename} main" \
+    | sudo tee /etc/apt/sources.list.d/php.list >/dev/null
+sudo apt-get update -y
+
+# Version selection
+echo -e "\n${BLUE}Available PHP versions:${NC} 8.0  8.1  8.2  8.3  8.4  8.5"
+php_input="${1:-}"
+if [[ -z "$php_input" ]]; then
+    read -rp "Enter one or more versions, separated by commas (e.g., 8.2,8.3,8.4): " php_input
+fi
+
+# Accept commas and/or whitespace, discard duplicates, and preserve input order.
+php_input="${php_input//,/ }"
+read -ra requested_versions <<< "$php_input"
+((${#requested_versions[@]})) || error "No PHP version was entered."
+
+php_versions=()
+for php_version in "${requested_versions[@]}"; do
+    [[ "$php_version" =~ ^8\.[0-5]$ ]] \
+        || error "Invalid version '$php_version'. Choose from 8.0–8.5."
+    if [[ ! " ${php_versions[*]} " =~ " ${php_version} " ]]; then
+        php_versions+=("$php_version")
     fi
 done
 
-# ── Set default CLI PHP ───────────────────────────────────────────────────────
-sudo update-alternatives --set php /usr/bin/php${php_version} 2>/dev/null || true
+for php_version in "${php_versions[@]}"; do
+    apt-cache show "php${php_version}-cli" &>/dev/null \
+        || error "PHP $php_version is not available for ${repo_codename}."
+done
 
-# ── Start PHP-FPM ─────────────────────────────────────────────────────────────
-section "Enabling PHP-FPM"
-sudo systemctl enable php${php_version}-fpm
-sudo systemctl start php${php_version}-fpm
+for php_version in "${php_versions[@]}"; do
+    section "Installing PHP $php_version — core packages"
+    sudo apt-get install -y \
+        php${php_version} \
+        php${php_version}-cli \
+        php${php_version}-common \
+        php${php_version}-fpm \
+        php${php_version}-curl \
+        php${php_version}-gd \
+        php${php_version}-intl \
+        php${php_version}-mbstring \
+        php${php_version}-mysql \
+        php${php_version}-opcache \
+        php${php_version}-readline \
+        php${php_version}-xml \
+        php${php_version}-xsl \
+        php${php_version}-zip \
+        php${php_version}-bz2 \
+        php${php_version}-sqlite3 \
+        php${php_version}-bcmath \
+        php${php_version}-soap \
+        php${php_version}-pgsql \
+        php${php_version}-ldap
 
-# ── Verify ────────────────────────────────────────────────────────────────────
+    # Some optional extensions may not be published for every PHP version.
+    section "Installing PHP $php_version — optional extensions"
+    optional_exts=(imagick igbinary redis apcu mongodb memcached swoole)
+    for extension in "${optional_exts[@]}"; do
+        ext="php${php_version}-${extension}"
+        if apt-cache show "$ext" &>/dev/null; then
+            sudo apt-get install -y "$ext" \
+                && log "Installed: $ext" \
+                || warn "Install failed (skipping): $ext"
+        else
+            warn "Not available in repository (skipping): $ext"
+        fi
+    done
+
+    section "Enabling PHP $php_version FPM"
+    sudo systemctl enable --now "php${php_version}-fpm"
+done
+
+# Use the last requested version as the default for the php command.
+default_php="${php_versions[${#php_versions[@]}-1]}"
+sudo update-alternatives --set php "/usr/bin/php${default_php}"
+
 section "Verification"
 php -v
-echo -e "\n${GREEN}PHP $php_version installed and running.${NC}"
+for php_version in "${php_versions[@]}"; do
+    systemctl is-active --quiet "php${php_version}-fpm" \
+        && log "php${php_version}-fpm is running" \
+        || error "php${php_version}-fpm is not running"
+done
+
+echo -e "\n${GREEN}PHP ${php_versions[*]} installed and running. Default CLI: PHP ${default_php}.${NC}"
