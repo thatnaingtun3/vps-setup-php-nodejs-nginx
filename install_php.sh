@@ -126,7 +126,8 @@ for php_version in "${php_versions[@]}"; do
     done
 
     section "Enabling PHP $php_version FPM"
-    sudo systemctl enable --now "php${php_version}-fpm"
+    sudo systemctl enable "php${php_version}-fpm"
+    sudo systemctl restart "php${php_version}-fpm"
 done
 
 # Use the last requested version as the default for the php command.
