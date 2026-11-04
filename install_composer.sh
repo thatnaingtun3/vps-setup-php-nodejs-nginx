@@ -54,3 +54,4 @@ sudo chmod +x /usr/local/bin/composer
 section "Verification"
 composer --version
 echo -e "\n${GREEN}Composer installed successfully.${NC}"
+

@@ -25,3 +25,4 @@ section "Verification"
 nginx -v
 sudo systemctl status nginx --no-pager | grep -E "Active|running" || true
 echo -e "\n${GREEN}Nginx installed and running.${NC}"
+

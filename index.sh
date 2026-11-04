@@ -22,3 +22,4 @@ section "Step 4 / 4 — Composer"
 bash "$SCRIPT_DIR/install_composer.sh"
 
 echo -e "\n${GREEN}All done! PHP, Node.js, Nginx, and Composer are installed and running.${NC}"
+
