@@ -105,6 +105,26 @@ for php_version in "${php_versions[@]}"; do
         fi
     done
 
+    section "Configuring PHP $php_version FPM php.ini"
+    fpm_ini="/etc/php/${php_version}/fpm/php.ini"
+    [[ -f "$fpm_ini" ]] || error "FPM php.ini not found: $fpm_ini"
+    sudo cp -n "$fpm_ini" "${fpm_ini}.bak"
+    declare -A ini_settings=(
+        [upload_max_filesize]="500M"
+        [post_max_size]="500M"
+        [memory_limit]="512M"
+        [max_execution_time]="600"
+    )
+    for key in "${!ini_settings[@]}"; do
+        value="${ini_settings[$key]}"
+        if sudo grep -qE "^[;[:space:]]*${key}[[:space:]]*=" "$fpm_ini"; then
+            sudo sed -i -E "s|^[;[:space:]]*${key}[[:space:]]*=.*|${key} = ${value}|" "$fpm_ini"
+        else
+            echo "${key} = ${value}" | sudo tee -a "$fpm_ini" >/dev/null
+        fi
+        log "Set ${key} = ${value}"
+    done
+
     section "Enabling PHP $php_version FPM"
     sudo systemctl enable --now "php${php_version}-fpm"
 done
