@@ -69,27 +69,34 @@ done
 
 for php_version in "${php_versions[@]}"; do
     section "Installing PHP $php_version — core packages"
-    sudo apt-get install -y \
-        php${php_version} \
-        php${php_version}-cli \
-        php${php_version}-common \
-        php${php_version}-fpm \
-        php${php_version}-curl \
-        php${php_version}-gd \
-        php${php_version}-intl \
-        php${php_version}-mbstring \
-        php${php_version}-mysql \
-        php${php_version}-opcache \
-        php${php_version}-readline \
-        php${php_version}-xml \
-        php${php_version}-xsl \
-        php${php_version}-zip \
-        php${php_version}-bz2 \
-        php${php_version}-sqlite3 \
-        php${php_version}-bcmath \
-        php${php_version}-soap \
-        php${php_version}-pgsql \
-        php${php_version}-ldap
+    core_packages=(
+        "php${php_version}"
+        "php${php_version}-cli"
+        "php${php_version}-common"
+        "php${php_version}-fpm"
+        "php${php_version}-curl"
+        "php${php_version}-gd"
+        "php${php_version}-intl"
+        "php${php_version}-mbstring"
+        "php${php_version}-mysql"
+        "php${php_version}-readline"
+        "php${php_version}-xml"
+        "php${php_version}-xsl"
+        "php${php_version}-zip"
+        "php${php_version}-bz2"
+        "php${php_version}-sqlite3"
+        "php${php_version}-bcmath"
+        "php${php_version}-soap"
+        "php${php_version}-pgsql"
+        "php${php_version}-ldap"
+    )
+    # OPcache is built into PHP 8.5 itself, so Sury ships no php8.5-opcache
+    # package. Installing it would abort the whole apt run with "Unable to
+    # locate package".
+    if [[ "$php_version" != "8.5" ]]; then
+        core_packages+=("php${php_version}-opcache")
+    fi
+    sudo apt-get install -y "${core_packages[@]}"
 
     # Some optional extensions may not be published for every PHP version.
     section "Installing PHP $php_version — optional extensions"
