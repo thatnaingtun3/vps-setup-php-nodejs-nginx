@@ -112,24 +112,27 @@ for php_version in "${php_versions[@]}"; do
         fi
     done
 
-    section "Configuring PHP $php_version FPM php.ini"
-    fpm_ini="/etc/php/${php_version}/fpm/php.ini"
-    [[ -f "$fpm_ini" ]] || error "FPM php.ini not found: $fpm_ini"
-    sudo cp -n "$fpm_ini" "${fpm_ini}.bak"
+    section "Configuring PHP $php_version php.ini (FPM and CLI)"
     declare -A ini_settings=(
         [upload_max_filesize]="500M"
         [post_max_size]="500M"
         [memory_limit]="512M"
         [max_execution_time]="600"
+        [max_input_vars]="5000"
     )
-    for key in "${!ini_settings[@]}"; do
-        value="${ini_settings[$key]}"
-        if sudo grep -qE "^[;[:space:]]*${key}[[:space:]]*=" "$fpm_ini"; then
-            sudo sed -i -E "s|^[;[:space:]]*${key}[[:space:]]*=.*|${key} = ${value}|" "$fpm_ini"
-        else
-            echo "${key} = ${value}" | sudo tee -a "$fpm_ini" >/dev/null
-        fi
-        log "Set ${key} = ${value}"
+    for sapi in fpm cli; do
+        ini_file="/etc/php/${php_version}/${sapi}/php.ini"
+        [[ -f "$ini_file" ]] || error "${sapi^^} php.ini not found: $ini_file"
+        sudo cp -n "$ini_file" "${ini_file}.bak"
+        for key in "${!ini_settings[@]}"; do
+            value="${ini_settings[$key]}"
+            if sudo grep -qE "^[;[:space:]]*${key}[[:space:]]*=" "$ini_file"; then
+                sudo sed -i -E "s|^[;[:space:]]*${key}[[:space:]]*=.*|${key} = ${value}|" "$ini_file"
+            else
+                echo "${key} = ${value}" | sudo tee -a "$ini_file" >/dev/null
+            fi
+            log "Set ${key} = ${value} (${sapi})"
+        done
     done
 
     section "Enabling PHP $php_version FPM"
